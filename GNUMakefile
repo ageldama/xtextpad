@@ -16,8 +16,9 @@ help: ## Show this help
 
 
 CC = gcc
-CFLAGS = -Wall $(shell pkg-config --cflags gtk+-3.0 gdk-x11-3.0 x11)
-LIBS = $(shell pkg-config --libs gtk+-3.0 gdk-x11-3.0 x11)
+CFLAGS += -g
+CFLAGS += -Wall $(shell pkg-config --cflags gtk+-3.0 gdk-x11-3.0 x11)
+LIBS += $(shell pkg-config --libs gtk+-3.0 gdk-x11-3.0 x11)
 
 SRCS = xtextpad.c
 OBJS = $(SRCS:.c=.o)

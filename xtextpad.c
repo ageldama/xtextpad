@@ -156,20 +156,91 @@ Window get_active_window_gtk(GdkDisplay *gdk_display) {
 }
 
 
+
+// X11 클립보드 데이터를 유지하기 위한 백그라운드 데몬 프로세스
+static void daemonize_and_hold_clipboard(Display *display, const char *text) {
+    pid_t pid = fork();
+    if (pid < 0) return;
+    if (pid > 0) return; // 부모 프로세스는 바로 종료
+
+    // 자식 프로세스: 세션 분리
+    setsid();
+
+    Window root = DefaultRootWindow(display);
+    Window owner = XCreateSimpleWindow(display, root, 0, 0, 1, 1, 0, 0, 0);
+
+    Atom clipboard = XInternAtom(display, "CLIPBOARD", False);
+    Atom primary   = XInternAtom(display, "PRIMARY", False);
+    Atom utf8_str  = XInternAtom(display, "UTF8_STRING", False);
+    Atom targets   = XInternAtom(display, "TARGETS", False);
+
+    // PRIMARY 및 CLIPBOARD 소유권 획득
+    XSetSelectionOwner(display, clipboard, owner, CurrentTime);
+    XSetSelectionOwner(display, primary, owner, CurrentTime);
+
+    int held_selections = 2;
+    XEvent event;
+
+    // 다른 앱이 클립보드 소유권을 가져갈 때까지 요청 응답 서비스 제공
+    while (held_selections > 0) {
+        XNextEvent(display, &event);
+
+        if (event.type == SelectionRequest) {
+            XSelectionRequestEvent *req = &event.xselectionrequest;
+            XSelectionEvent sel_evt = {
+                .type = SelectionNotify,
+                .requestor = req->requestor,
+                .selection = req->selection,
+                .target = req->target,
+                .property = req->property,
+                .time = req->time
+            };
+
+            if (req->target == targets) {
+                Atom supp[] = { targets, utf8_str, XA_STRING };
+                XChangeProperty(display, req->requestor, req->property, XA_ATOM, 32,
+                                PropModeReplace, (unsigned char *)supp, 3);
+            } else if (req->target == utf8_str || req->target == XA_STRING) {
+                XChangeProperty(display, req->requestor, req->property, req->target, 8,
+                                PropModeReplace, (unsigned char *)text, strlen(text));
+            } else {
+                sel_evt.property = None;
+            }
+
+            XSendEvent(display, req->requestor, True, 0, (XEvent *)&sel_evt);
+            XFlush(display);
+        } 
+        else if (event.type == SelectionClear) {
+            held_selections--;
+        }
+    }
+
+    printf("TEXT:[%s]\n", text);
+
+    XDestroyWindow(display, owner);
+    XCloseDisplay(display);
+    exit(EXIT_SUCCESS);
+}
+
+
 static void copy_buffer_to_clipboard(GtkTextBuffer *buffer) {
-    GtkClipboard *clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
-    GtkClipboard *primary   = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
+    /* GtkClipboard *clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD); */
+    /* GtkClipboard *primary   = gtk_clipboard_get(GDK_SELECTION_PRIMARY); */
 
     GtkTextIter start, end;
     gtk_text_buffer_get_bounds(buffer, &start, &end);
     gchar *text = gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
 
-    gtk_clipboard_set_text(clipboard, text, -1);
-    gtk_clipboard_set_text(primary, text, -1);
+    GdkDisplay *gdk_disp = gdk_display_get_default();
+    Display *xdisplay = GDK_DISPLAY_XDISPLAY(gdk_disp);
+    daemonize_and_hold_clipboard(xdisplay, text);
 
-    gtk_clipboard_store(clipboard);
+    /* gtk_clipboard_set_text(clipboard, text, -1); */
+    /* gtk_clipboard_set_text(primary, text, -1); */
+    /*  */
+    /* gtk_clipboard_store(clipboard); */
 
-    g_print("--- COPIED ---\n%s\n----------------------\n", text);
+    /* g_print("--- COPIED ---\n%s\n----------------------\n", text); */
 
     g_free(text);
 
