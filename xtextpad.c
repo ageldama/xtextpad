@@ -6,7 +6,50 @@
 #include <X11/keysym.h>
 #include <X11/Xatom.h>
 
+void send_shift_insert(Display *display, Window target_window)
+{
+    XKeyEvent event;
+    KeyCode insert_code, shift_code;
+    
+    // Get keycodes
+    insert_code = XKeysymToKeycode(display, XK_Insert);
+    shift_code = XKeysymToKeycode(display, XK_Shift_L);
+    
+    // Create KeyPress event for Insert
+    event.type = KeyPress;
+    event.display = display;
+    event.window = target_window;
+    event.root = DefaultRootWindow(display);
+    event.subwindow = None;
+    event.time = CurrentTime;
+    event.x = 1;
+    event.y = 1;
+    event.x_root = 1;
+    event.y_root = 1;
+    event.same_screen = True;
+    event.state = ShiftMask;  // Shift modifier already held
+    event.keycode = insert_code;
 
+    #if 0
+      // 3. Clear modifiers (--clearmodifiers equivalent)
+  // Send Shift Press
+  event.type = KeyPress;
+  event.keycode = shift_code;
+  event.state = 0; // No modifiers active initially
+  XSendEvent(display, target_window, True, KeyPressMask, (XEvent *)&event);
+#endif
+    
+    // Send synthetic event
+    XSendEvent(display, target_window, True, KeyPressMask, (XEvent *)&event);
+    
+    // Also send KeyRelease
+    event.type = KeyRelease;
+    XSendEvent(display, target_window, True, KeyReleaseMask, (XEvent *)&event);
+    
+    XFlush(display);
+}
+
+#if 0
 void send_shift_insert_to_window(GdkDisplay *gdk_display, Window target_wid) {
   if (!GDK_IS_X11_DISPLAY(gdk_display)) {
     g_printerr("Error: Window event injection requires an X11 display.\n");
@@ -66,6 +109,7 @@ void send_shift_insert_to_window(GdkDisplay *gdk_display, Window target_wid) {
   // Flush event queue to transmit immediately
   XFlush(xdisplay);
 }
+#endif
 
 
 
@@ -114,15 +158,21 @@ Window get_active_window_gtk(GdkDisplay *gdk_display) {
 
 static void copy_buffer_to_clipboard(GtkTextBuffer *buffer) {
     GtkClipboard *clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+    GtkClipboard *primary   = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
 
     GtkTextIter start, end;
     gtk_text_buffer_get_bounds(buffer, &start, &end);
     gchar *text = gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
 
     gtk_clipboard_set_text(clipboard, text, -1);
+    gtk_clipboard_set_text(primary, text, -1);
+
     gtk_clipboard_store(clipboard);
 
+    g_print("--- COPIED ---\n%s\n----------------------\n", text);
+
     g_free(text);
+
 }
 
 
@@ -139,7 +189,8 @@ static void on_button_clicked(GtkButton *button, gpointer user_data) {
   GdkDisplay *display = gdk_display_get_default();
 
   copy_buffer_to_clipboard(widgets->buffer);
-  send_shift_insert_to_window(display, widgets->target_window);
+  Display *xdisplay = GDK_DISPLAY_XDISPLAY(display);
+  send_shift_insert(xdisplay, widgets->target_window);
 
   g_application_quit(G_APPLICATION(widgets->app));
 }
