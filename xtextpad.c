@@ -120,6 +120,8 @@ static void copy_buffer_to_clipboard(GtkTextBuffer *buffer) {
     gchar *text = gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
 
     gtk_clipboard_set_text(clipboard, text, -1);
+    gtk_clipboard_store(clipboard);
+
     g_free(text);
 }
 
@@ -222,6 +224,7 @@ int main(int argc, char **argv) {
   }
 
   Window wind = get_active_window_gtk(display);
+  fprintf(stderr, "active-window: %p\n", (void *)wind);
 
   // gtk
   GtkApplication *app = gtk_application_new("io.github.ageldama.XTextPad", G_APPLICATION_DEFAULT_FLAGS);
